@@ -21,6 +21,7 @@
 #include <mach/socinfo.h>
 #include <mach/msm_iomap.h>
 #include <mach/board.h>
+#include <mach/iommu_domains.h>
 #include <stddef.h>
 
 #include "kgsl.h"
@@ -221,7 +222,7 @@ static void _find_mem_entries(struct kgsl_mmu *mmu, unsigned int faultaddr,
 
 	list_for_each_entry(private, &kgsl_driver.process_list, list) {
 
-		if (private->pagetable->name != id)
+		if (private->pagetable && (private->pagetable->name != id))
 			continue;
 
 		spin_lock(&private->mem_lock);
@@ -254,6 +255,8 @@ static void _check_if_freed(struct kgsl_iommu_device *iommu_dev,
 	void *base = kgsl_driver.memfree_hist.base_hist_rb;
 	struct kgsl_memfree_hist_elem *wptr;
 	struct kgsl_memfree_hist_elem *p;
+	char name[32];
+	memset(name, 0, sizeof(name));
 
 	mutex_lock(&kgsl_driver.memfree_hist_mutex);
 	wptr = kgsl_driver.memfree_hist.wptr;
@@ -263,12 +266,15 @@ static void _check_if_freed(struct kgsl_iommu_device *iommu_dev,
 			if (addr >= p->gpuaddr &&
 				addr < (p->gpuaddr + p->size)) {
 
+				kgsl_get_memory_usage(name, sizeof(name) - 1,
+					p->flags);
 				KGSL_LOG_DUMP(iommu_dev->kgsldev,
 					"---- premature free ----\n");
 				KGSL_LOG_DUMP(iommu_dev->kgsldev,
-					"[%8.8X-%8.8X] was already freed by pid %d\n",
+					"[%8.8X-%8.8X] (%s) was already freed by pid %d\n",
 					p->gpuaddr,
 					p->gpuaddr + p->size,
+					name,
 					p->pid);
 			}
 		p++;
@@ -621,8 +627,10 @@ static void kgsl_iommu_destroy_pagetable(void *mmu_specific_pt)
 {
 	struct kgsl_iommu_pt *iommu_pt = mmu_specific_pt;
 	if (iommu_pt->domain)
-		iommu_domain_free(iommu_pt->domain);
+		msm_unregister_domain(iommu_pt->domain);
+
 	kfree(iommu_pt);
+	iommu_pt = NULL;
 }
 
 /*

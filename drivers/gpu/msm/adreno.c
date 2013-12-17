@@ -107,6 +107,7 @@ static struct adreno_device device_3d0 = {
 			.irq_name = KGSL_3D0_IRQ,
 		},
 		.iomemname = KGSL_3D0_REG_MEMORY,
+		.shadermemname = KGSL_3D0_SHADER_MEMORY,
 		.ftbl = &adreno_functable,
 #ifdef CONFIG_HAS_EARLYSUSPEND
 		.display_off = {
@@ -292,7 +293,7 @@ static void adreno_perfcounter_start(struct adreno_device *adreno_dev)
  */
 
 int adreno_perfcounter_read_group(struct adreno_device *adreno_dev,
-	struct kgsl_perfcounter_read_group *reads, unsigned int count)
+	struct kgsl_perfcounter_read_group __user *reads, unsigned int count)
 {
 	struct adreno_perfcounters *counters = adreno_dev->gpudev->perfcounters;
 	struct adreno_perfcount_group *group;
@@ -312,12 +313,6 @@ int adreno_perfcounter_read_group(struct adreno_device *adreno_dev,
 	if (reads == NULL || count == 0 || count > 100)
 		return -EINVAL;
 
-	/* verify valid inputs group ids and countables */
-	for (i = 0; i < count; i++) {
-		if (reads[i].groupid >= counters->group_count)
-			return -EINVAL;
-	}
-
 	list = kmalloc(sizeof(struct kgsl_perfcounter_read_group) * count,
 			GFP_KERNEL);
 	if (!list)
@@ -331,7 +326,14 @@ int adreno_perfcounter_read_group(struct adreno_device *adreno_dev,
 
 	/* list iterator */
 	for (j = 0; j < count; j++) {
+
 		list[j].value = 0;
+
+		/* Verify that the group ID is within range */
+		if (list[j].groupid >= counters->group_count) {
+			ret = -EINVAL;
+			goto done;
+		}
 
 		group = &(counters->groups[list[j].groupid]);
 
@@ -1126,6 +1128,10 @@ static int adreno_of_get_pwrlevels(struct device_node *parent,
 	if (adreno_of_read_property(parent, "qcom,initial-pwrlevel",
 		&pdata->init_level))
 		pdata->init_level = 1;
+
+	if (adreno_of_read_property(parent, "qcom,step-pwrlevel",
+		&pdata->step_mul))
+		pdata->step_mul = 1;
 
 	if (pdata->init_level < 0 || pdata->init_level > pdata->num_levels) {
 		KGSL_CORE_ERR("Initial power level out of range\n");
@@ -3256,12 +3262,23 @@ uint8_t *adreno_convertaddr(struct kgsl_device *device, unsigned int pt_base,
 	return memdesc ? kgsl_gpuaddr_to_vaddr(memdesc, gpuaddr) : NULL;
 }
 
-void adreno_regread(struct kgsl_device *device, unsigned int offsetwords,
-				unsigned int *value)
+/**
+ * adreno_read - General read function to read adreno device memory
+ * @device - Pointer to the GPU device struct (for adreno device)
+ * @base - Base address (kernel virtual) where the device memory is mapped
+ * @offsetwords - Offset in words from the base address, of the memory that
+ * is to be read
+ * @value - Value read from the device memory
+ * @mem_len - Length of the device memory mapped to the kernel
+ */
+static void adreno_read(struct kgsl_device *device, void *base,
+		unsigned int offsetwords, unsigned int *value,
+		unsigned int mem_len)
 {
+
 	unsigned int *reg;
-	BUG_ON(offsetwords*sizeof(uint32_t) >= device->reg_len);
-	reg = (unsigned int *)(device->reg_virt + (offsetwords << 2));
+	BUG_ON(offsetwords*sizeof(uint32_t) >= mem_len);
+	reg = (unsigned int *)(base + (offsetwords << 2));
 
 	if (!in_interrupt())
 		kgsl_pre_hwaccess(device);
@@ -3270,6 +3287,31 @@ void adreno_regread(struct kgsl_device *device, unsigned int offsetwords,
 	 * i.e. act like normal readl() */
 	*value = __raw_readl(reg);
 	rmb();
+}
+
+/**
+ * adreno_regread - Used to read adreno device registers
+ * @offsetwords - Word (4 Bytes) offset to the register to be read
+ * @value - Value read from device register
+ */
+void adreno_regread(struct kgsl_device *device, unsigned int offsetwords,
+	unsigned int *value)
+{
+	adreno_read(device, device->reg_virt, offsetwords, value,
+						device->reg_len);
+}
+
+/**
+ * adreno_shadermem_regread - Used to read GPU (adreno) shader memory
+ * @device - GPU device whose shader memory is to be read
+ * @offsetwords - Offset in words, of the shader memory address to be read
+ * @value - Pointer to where the read shader mem value is to be stored
+ */
+void adreno_shadermem_regread(struct kgsl_device *device,
+	unsigned int offsetwords, unsigned int *value)
+{
+	adreno_read(device, device->shader_mem_virt, offsetwords, value,
+					device->shader_mem_len);
 }
 
 void adreno_regwrite(struct kgsl_device *device, unsigned int offsetwords,

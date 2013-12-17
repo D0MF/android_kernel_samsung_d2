@@ -27,8 +27,8 @@
 #define DDL_NO_OF_MB(nWidth, nHeight) \
 	((((nWidth) + 15) >> 4) * (((nHeight) + 15) >> 4))
 
-#define DDL_MAX_FRAME_WIDTH   1920
-#define DDL_MAX_FRAME_HEIGHT  1088
+#define DDL_MAX_FRAME_WIDTH   1280
+#define DDL_MAX_FRAME_HEIGHT  720
 
 #define DDL_MAX_VC1_FRAME_WIDTH		(DDL_MAX_FRAME_WIDTH)
 #define DDL_MAX_VC1_FRAME_HEIGHT	(1280)

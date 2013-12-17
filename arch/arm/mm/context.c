@@ -118,6 +118,7 @@ static void flush_context(void)
 	/* set the reserved ASID before flushing the TLB */
 	set_asid(0);
 	local_flush_tlb_all();
+	dummy_flush_tlb_a15_erratum();
 	if (icache_is_vivt_asid_tagged()) {
 		__flush_icache_all();
 		dsb();
