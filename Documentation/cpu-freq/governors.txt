@@ -230,7 +230,7 @@ then speed may be bumped higher.  Default is the maximum speed
 allowed by the policy at governor initialization time.
 
 go_hispeed_load: The CPU load at which to ramp to hispeed_freq.
-Default is 99%.
+Default is 95%.
 
 above_hispeed_delay: When speed is at or above hispeed_freq, wait for
 this long before raising speed in response to continued high load.
